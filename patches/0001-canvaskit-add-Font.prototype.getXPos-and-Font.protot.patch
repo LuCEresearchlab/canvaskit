@@ -1,0 +1,178 @@
+From 9a92a01fc34cf4b92c1c78e78827aff5f8ae99e7 Mon Sep 17 00:00:00 2001
+From: Joey <bevilacquajoey@gmail.com>
+Date: Fri, 24 Oct 2025 11:42:02 +0200
+Subject: [PATCH] canvaskit: add Font.prototype.getXPos and
+ Font.prototype.getPath
+
+---
+ modules/canvaskit/canvaskit_bindings.cpp     | 13 +++++++
+ modules/canvaskit/externs.js                 |  4 ++
+ modules/canvaskit/font.js                    | 18 +++++++++
+ modules/canvaskit/npm_build/types/index.d.ts | 21 +++++++++++
+ modules/canvaskit/tests/font_test.js         | 39 ++++++++++++++++++++
+ 5 files changed, 95 insertions(+)
+
+diff --git a/modules/canvaskit/canvaskit_bindings.cpp b/modules/canvaskit/canvaskit_bindings.cpp
+index 16ef6011fc..428a111323 100644
+--- a/modules/canvaskit/canvaskit_bindings.cpp
++++ b/modules/canvaskit/canvaskit_bindings.cpp
+@@ -1563,6 +1563,19 @@ EMSCRIPTEN_BINDINGS(Skia) {
+                                                      glyphIDs, expectedCodePoints);
+             return actualCodePoints;
+         }))
++        .function("_getXPos", optional_override([](SkFont& self, WASMPointerU16 gPtr,
++                                                   size_t len, WASMPointerU16 pPtr,
++                                                   SkScalar origin) -> void {
++            SkGlyphID* glyphs = reinterpret_cast<SkGlyphID*>(gPtr);
++            float* xpos = reinterpret_cast<float*>(pPtr);
++            self.getXPos(glyphs, len, xpos, origin);
++        }))
++        .function("_getPath", optional_override([](SkFont& self, SkGlyphID glyph) -> SkPathOrNull {
++            SkPath glyphPath;
++            return self.getPath(glyph, &glyphPath)
++                ? emscripten::val(glyphPath)
++                : emscripten::val::null();
++        }))
+         .function("getMetrics", optional_override([](SkFont& self) -> JSObject {
+             SkFontMetrics fm;
+             self.getMetrics(&fm);
+diff --git a/modules/canvaskit/externs.js b/modules/canvaskit/externs.js
+index c160e7553a..09f64c2fd5 100644
+--- a/modules/canvaskit/externs.js
++++ b/modules/canvaskit/externs.js
+@@ -459,12 +459,16 @@ var CanvasKit = {
+       getGlyphIDs: function() {},
+       getGlyphWidths: function() {},
+       getGlyphIntercepts: function() {},
++      getXPos: function() {},
++      getPath: function() {},
+     },
+ 
+     // private API (from C++ bindings)
+     _getGlyphIDs: function() {},
+     _getGlyphIntercepts: function() {},
+     _getGlyphWidthBounds: function() {},
++    _getXPos: function() {},
++    _getPath: function() {},
+   },
+ 
+   FontMgr: {
+diff --git a/modules/canvaskit/font.js b/modules/canvaskit/font.js
+index 24e06d21d5..ee9da639c5 100644
+--- a/modules/canvaskit/font.js
++++ b/modules/canvaskit/font.js
+@@ -191,6 +191,24 @@ CanvasKit._extraInitializations.push(function() {
+     return rv;
+   };
+ 
++  CanvasKit.Font.prototype.getXPos = function(glyphs, origin = 0) {
++    var glyphPtr = copy1dArray(glyphs, 'HEAPU16');
++    var bytesPerXPos = 4;
++    var xPosPtr = CanvasKit._malloc(glyphs.length * bytesPerXPos);
++    this._getXPos(glyphPtr, glyphs.length, xPosPtr, origin);
++
++    var xPos = new Float32Array(CanvasKit.HEAPU8.buffer, xPosPtr, glyphs.length);
++    freeArraysThatAreNotMallocedByUsers(glyphPtr, glyphs);
++    var rv = Float32Array.from(xPos);
++    CanvasKit._free(xPosPtr);
++    return rv;
++  }
++
++  CanvasKit.Font.prototype.getPath = function(glyphID) {
++    var rv = this._getPath(glyphID);
++    return rv;
++  }
++
+   CanvasKit.TextBlob.MakeOnPath = function(str, path, font, initialOffset) {
+     if (!str || !str.length) {
+       Debug('ignoring 0 length string');
+diff --git a/modules/canvaskit/npm_build/types/index.d.ts b/modules/canvaskit/npm_build/types/index.d.ts
+index 8f6e9265be..1f5a41151b 100644
+--- a/modules/canvaskit/npm_build/types/index.d.ts
++++ b/modules/canvaskit/npm_build/types/index.d.ts
+@@ -2067,6 +2067,25 @@ export interface Font extends EmbindObject<"Font"> {
+      * @param face
+      */
+     setTypeface(face: Typeface | null): void;
++
++    /**
++     * Retrieves the x-positions for each glyph.
++     *
++     * @param glyphIDs array of glyph indices to be positioned
++     * @param origin x-position of the first glyph. Defaults to 0
++     * @returns returns glyphs x-positions
++     */
++    getXPos(glyphIDs: GlyphIDArray, origin?: number): number[];
++
++    /**
++     * If the specified glyph can be represented as a path, return its path.
++     * If it is not (e.g. it is represented with a bitmap) return null.
++     *
++     * Note: an 'empty' glyph (e.g. what a space " " character might map to) can return
++     * a path, but that path may have zero contours.
++     * @param glyphID
++     */
++    getPath(glyphID: GlyphID): Path | null;
+ }
+ 
+ /**
+@@ -4398,6 +4417,8 @@ export type FlattenedPointArray = Float32Array;
+ export type FlattenedRectangleArray = Float32Array;
+ 
+ export type GlyphIDArray = Uint16Array;
++
++export type GlyphID = number;
+ /**
+  * A command is a verb and then any arguments needed to fulfill that path verb.
+  * InputCommands is a flattened structure of one or more of these.
+diff --git a/modules/canvaskit/tests/font_test.js b/modules/canvaskit/tests/font_test.js
+index 938532972b..47dd098756 100644
+--- a/modules/canvaskit/tests/font_test.js
++++ b/modules/canvaskit/tests/font_test.js
+@@ -459,4 +459,43 @@ describe('Font Behavior', () => {
+         testFont.delete();
+         colrFace.delete();
+     });
++
++    it('getXPos returns an ordered array of progressively increasing numbers', () => {
++        const font = new CanvasKit.Font(CanvasKit.Typeface.GetDefault(), 24);
++        const str = 'Hello world';
++        const origin = -16;
++        const xPos = font.getXPos(str, origin);
++        expect(xPos.length).toBe(str.length);
++        expect(xPos[0]).toBeGreaterThanOrEqual(origin);
++        let previous = xPos[0];
++        for (let i = 1; i < xPos.length; i++) {
++            const current = xPos[i];
++            expect(current).toBeGreaterThan(previous);
++            previous = current;
++        }
++
++        font.delete();
++    });
++
++    gm('getPath', (canvas) => {
++        const paint = new CanvasKit.Paint();
++        paint.setAntiAlias(true);
++
++        const font = new CanvasKit.Font(CanvasKit.Typeface.GetDefault(), 40);
++        const fontPaint = new CanvasKit.Paint();
++        fontPaint.setAntiAlias(true);
++        fontPaint.setStyle(CanvasKit.PaintStyle.Fill);
++
++        const glyphID = font.getGlyphIDs('A')[0];
++
++        const path = new CanvasKit.Path();
++        path.addPath(font.getPath(glyphID));
++
++        canvas.drawPath(path, paint);
++
++        path.delete();
++        paint.delete();
++        font.delete();
++        fontPaint.delete();
++    });
+ });
+-- 
+2.50.1
+
