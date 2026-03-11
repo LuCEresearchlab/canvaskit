@@ -1,0 +1,112 @@
+From d64c44567a7d05438405b0a9343e5877cb75eae5 Mon Sep 17 00:00:00 2001
+From: Joey <bevilacquajoey@gmail.com>
+Date: Wed, 11 Mar 2026 09:15:34 +0100
+Subject: [PATCH 2/2] canvaskit: add Font.measureText
+
+---
+ modules/canvaskit/canvaskit_bindings.cpp     |  9 +++++++
+ modules/canvaskit/externs.js                 |  2 ++
+ modules/canvaskit/font.js                    | 27 ++++++++++++++++++++
+ modules/canvaskit/npm_build/types/index.d.ts |  8 ++++++
+ 4 files changed, 46 insertions(+)
+
+diff --git a/modules/canvaskit/canvaskit_bindings.cpp b/modules/canvaskit/canvaskit_bindings.cpp
+index 428a111323..3e16925561 100644
+--- a/modules/canvaskit/canvaskit_bindings.cpp
++++ b/modules/canvaskit/canvaskit_bindings.cpp
+@@ -1605,6 +1605,15 @@ EMSCRIPTEN_BINDINGS(Skia) {
+                                              (const SkPoint*)pos.data(), top, bottom);
+             return MakeTypedArray(sects.size(), (const float*)sects.data());
+         }), allow_raw_pointers())
++        .function("_measureText", optional_override([](SkFont& self,
++                                                       WASMPointerU8 sptr,
++                                                       size_t strLen,
++                                                       WASMPointerF32 bptr
++        ) -> SkScalar {
++            const char* str = reinterpret_cast<const char*>(sptr);
++            SkRect *bounds = reinterpret_cast<SkRect*>(bptr);
++            return self.measureText(str, strLen, SkTextEncoding::kUTF8, bounds);
++        }), allow_raw_pointers())
+         .function("getScaleX", &SkFont::getScaleX)
+         .function("getSize", &SkFont::getSize)
+         .function("getSkewX", &SkFont::getSkewX)
+diff --git a/modules/canvaskit/externs.js b/modules/canvaskit/externs.js
+index 09f64c2fd5..173c99c8d1 100644
+--- a/modules/canvaskit/externs.js
++++ b/modules/canvaskit/externs.js
+@@ -461,6 +461,7 @@ var CanvasKit = {
+       getGlyphIntercepts: function() {},
+       getXPos: function() {},
+       getPath: function() {},
++      measureText: function() {},
+     },
+ 
+     // private API (from C++ bindings)
+@@ -469,6 +470,7 @@ var CanvasKit = {
+     _getGlyphWidthBounds: function() {},
+     _getXPos: function() {},
+     _getPath: function() {},
++    _measureText: function() {},
+   },
+ 
+   FontMgr: {
+diff --git a/modules/canvaskit/font.js b/modules/canvaskit/font.js
+index ee9da639c5..5a7041eeb3 100644
+--- a/modules/canvaskit/font.js
++++ b/modules/canvaskit/font.js
+@@ -209,6 +209,33 @@ CanvasKit._extraInitializations.push(function() {
+     return rv;
+   }
+ 
++  // Clients can pass in a Float32Array with length 4 to this and the bounds
++  // will be copied into that array. Otherwise, the width will be returned
++  CanvasKit.Font.prototype.measureText = function(str, optionalOutputArray) {
++    if (!str || !str.length) {
++      if (optionalOutputArray) {
++        optionalOutputArray.set([0, 0, 0, 0]);
++      }
++      return 0;
++    }
++
++    // Add 1 for null terminator
++    const strBytes = lengthBytesUTF8(str) + 1;
++    const strPtr = CanvasKit._malloc(strBytes);
++    stringToUTF8(str, strPtr, strBytes); // This includes the null terminator
++
++    const boundsPtr = CanvasKit._malloc(4 * 4);
++    const width = this._measureText(strPtr, strBytes - 1, boundsPtr);
++
++    CanvasKit._free(strPtr);
++    const bounds = new Float32Array(CanvasKit.HEAPF32.buffer, boundsPtr, 4);
++    if (optionalOutputArray) {
++      optionalOutputArray.set(bounds);
++    }
++    CanvasKit._free(boundsPtr);
++    return width;
++  }
++
+   CanvasKit.TextBlob.MakeOnPath = function(str, path, font, initialOffset) {
+     if (!str || !str.length) {
+       Debug('ignoring 0 length string');
+diff --git a/modules/canvaskit/npm_build/types/index.d.ts b/modules/canvaskit/npm_build/types/index.d.ts
+index 1f5a41151b..152b92414f 100644
+--- a/modules/canvaskit/npm_build/types/index.d.ts
++++ b/modules/canvaskit/npm_build/types/index.d.ts
+@@ -2086,6 +2086,14 @@ export interface Font extends EmbindObject<"Font"> {
+      * @param glyphID
+      */
+     getPath(glyphID: GlyphID): Path | null;
++
++    /**
++     * Returns the bounding box of text relative to (0, 0).
++     *
++     * @param text
++     * @param output - if provided, the tight bounds will be copied into this rect.
++     */
++    measureText(text: string, output?: Rect): number;
+ }
+ 
+ /**
+-- 
+2.51.2
+
