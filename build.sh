@@ -18,6 +18,7 @@ OUT_DIR="$BASE_DIR/out"
   no_sksl_trace \
   no_woff2
 
+mkdir -p $OUT_DIR
 cp "$OUT_CK_WASM/canvaskit.js"          "$OUT_DIR/canvaskit.js"
 cp "$OUT_CK_WASM/canvaskit.wasm"        "$OUT_DIR/canvaskit.wasm"
 cp "$CK_DIR/npm_build/types/index.d.ts" "$OUT_DIR/canvaskit.d.ts"
