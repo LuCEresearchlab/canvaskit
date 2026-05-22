@@ -1,0 +1,135 @@
+From 5ac19f19939867b63fe2bc3f033201a574c75fbb Mon Sep 17 00:00:00 2001
+From: Luca Chiodini <luca@chiodini.org>
+Date: Fri, 22 May 2026 14:35:39 +0200
+Subject: [PATCH 3/3] canvaskit: add `SVGCanvas`
+
+---
+ include/core/BUILD.bazel                     |  1 +
+ include/core/SkSimpleSVGCanvas.h             | 27 ++++++++++++++++++++
+ modules/canvaskit/canvaskit_bindings.cpp     |  6 +++++
+ modules/canvaskit/compile.sh                 |  3 ++-
+ modules/canvaskit/npm_build/types/index.d.ts | 17 ++++++++++++
+ 5 files changed, 53 insertions(+), 1 deletion(-)
+ create mode 100644 include/core/SkSimpleSVGCanvas.h
+
+diff --git a/include/core/BUILD.bazel b/include/core/BUILD.bazel
+index a21ff435dd..f8e438b39a 100644
+--- a/include/core/BUILD.bazel
++++ b/include/core/BUILD.bazel
+@@ -80,6 +80,7 @@ skia_filegroup(
+         "SkScalar.h",
+         "SkSerialProcs.h",
+         "SkShader.h",
++        "SkSimpleSVGCanvas.h",
+         "SkSize.h",
+         "SkSpan.h",
+         "SkStream.h",
+diff --git a/include/core/SkSimpleSVGCanvas.h b/include/core/SkSimpleSVGCanvas.h
+new file mode 100644
+index 0000000000..089bf9e021
+--- /dev/null
++++ b/include/core/SkSimpleSVGCanvas.h
+@@ -0,0 +1,27 @@
++#include <string>
++#include "include/core/SkStream.h"
++#include "include/svg/SkSVGCanvas.h"
++
++class SK_API SkSimpleSVGCanvas {
++public:
++    SkSimpleSVGCanvas() {}
++    ~SkSimpleSVGCanvas() {}
++
++    SkCanvas* beginDrawing(float width, float height) {
++        fStream = SkDynamicMemoryWStream();
++        SkRect bounds = SkRect::MakeWH(width, height);
++        fCanvas = SkSVGCanvas::Make(bounds, &fStream);
++        return fCanvas.get();
++    }
++
++    std::string endDrawing() {
++        fCanvas.reset();
++        fStream.flush();
++        sk_sp<SkData> data = fStream.detachAsData();
++        return std::string(reinterpret_cast<const char*>(data->data()), data->size());
++    }
++
++private:
++    SkDynamicMemoryWStream fStream;
++    std::unique_ptr<SkCanvas> fCanvas;
++};
+diff --git a/modules/canvaskit/canvaskit_bindings.cpp b/modules/canvaskit/canvaskit_bindings.cpp
+index 3e16925561..29fb377578 100644
+--- a/modules/canvaskit/canvaskit_bindings.cpp
++++ b/modules/canvaskit/canvaskit_bindings.cpp
+@@ -37,6 +37,7 @@
+ #include "include/core/SkScalar.h"
+ #include "include/core/SkSerialProcs.h"
+ #include "include/core/SkShader.h"
++#include "include/core/SkSimpleSVGCanvas.h"
+ #include "include/core/SkStream.h"
+ #include "include/core/SkString.h"
+ #include "include/core/SkStrokeRec.h"
+@@ -2532,6 +2533,11 @@ EMSCRIPTEN_BINDINGS(Skia) {
+         }));
+ #endif
+ 
++    class_<SkSimpleSVGCanvas>("SimpleSVGCanvas")
++            .constructor<>()
++            .function("beginDrawing", &SkSimpleSVGCanvas::beginDrawing, allow_raw_pointers())
++            .function("endDrawing", &SkSimpleSVGCanvas::endDrawing);
++
+     class_<SkVertices>("Vertices")
+         .smart_ptr<sk_sp<SkVertices>>("sk_sp<Vertices>")
+         .function("_bounds", optional_override([](SkVertices& self,
+diff --git a/modules/canvaskit/compile.sh b/modules/canvaskit/compile.sh
+index 9c808e1517..ecdae8f0c5 100755
+--- a/modules/canvaskit/compile.sh
++++ b/modules/canvaskit/compile.sh
+@@ -217,7 +217,8 @@ echo "Compiling"
+   skia_use_dawn=${ENABLE_WEBGPU} \
+   skia_use_webgl=${ENABLE_WEBGL} \
+   skia_use_webgpu=${ENABLE_WEBGPU} \
+-  skia_use_expat=${USE_EXPAT} \
++  skia_use_expat=true \
++  skia_use_system_expat=false \
+   skia_use_fontconfig=false \
+   skia_use_freetype=true \
+   skia_use_libheif=false \
+diff --git a/modules/canvaskit/npm_build/types/index.d.ts b/modules/canvaskit/npm_build/types/index.d.ts
+index 152b92414f..cbcf3a18d8 100644
+--- a/modules/canvaskit/npm_build/types/index.d.ts
++++ b/modules/canvaskit/npm_build/types/index.d.ts
+@@ -460,6 +460,7 @@ export interface CanvasKit {
+     readonly Path: PathConstructorAndFactory;
+     readonly PictureRecorder: DefaultConstructor<PictureRecorder>;
+     readonly TextStyle: TextStyleConstructor;
++    readonly SimpleSVGCanvas: DefaultConstructor<SimpleSVGCanvas>;
+     readonly SlottableTextProperty: SlottableTextPropertyConstructor;
+ 
+     // Factories, i.e. things made with CanvasKit.Foo.MakeTurboEncabulator()
+@@ -2995,6 +2996,22 @@ export interface RuntimeEffect extends EmbindObject<"RuntimeEffect"> {
+     getUniformName(index: number): string;
+ }
+ 
++export interface SimpleSVGCanvas extends EmbindObject<"SimpleSVGCanvas"> {
++    /**
++     * Returns a canvas on which to draw. When done drawing, call `endDrawing()`.
++     * 
++     * @param width - the width of the canvas in pixels
++     * @param height - the height of the canvas in pixels
++     */
++    beginDrawing(width: number, height: number): Canvas;
++
++    /**
++     * Returns the captured draw commands as an SVG string and invalidates the canvas returned by `beginDrawing()`.
++     */
++    endDrawing(): string;
++}
++
++
+ /**
+  * See SkShader.h for more on this class. The objects are opaque.
+  */
+-- 
+2.50.1 (Apple Git-155)
+

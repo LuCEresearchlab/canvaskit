@@ -1,7 +1,7 @@
-From d64c44567a7d05438405b0a9343e5877cb75eae5 Mon Sep 17 00:00:00 2001
+From 5cdb59676862c7990a80a8e3e5e92233d66b9e25 Mon Sep 17 00:00:00 2001
 From: Joey <bevilacquajoey@gmail.com>
 Date: Wed, 11 Mar 2026 09:15:34 +0100
-Subject: [PATCH 2/2] canvaskit: add Font.measureText
+Subject: [PATCH 2/3] canvaskit: add Font.measureText
 
 ---
  modules/canvaskit/canvaskit_bindings.cpp     |  9 +++++++
@@ -108,5 +108,5 @@ index 1f5a41151b..152b92414f 100644
  
  /**
 -- 
-2.51.2
+2.50.1 (Apple Git-155)
 
