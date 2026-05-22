@@ -6,7 +6,8 @@ Targeting CanvasKit 0.40.0
 ## Changes
 
 - Add `Font.prototype.getXPos` and `Font.prototype.getPath` methods ([patch](./patches/0001-canvaskit-add-Font.prototype.getXPos-and-Font.protot.patch))
-- Add `Font.prototype.measureText` method ([patch](./patches/0002-canvaskit-add-Font.measureText))
+- Add `Font.prototype.measureText` method ([patch](./patches/0002-canvaskit-add-Font.measureText.patch))
+- Add `SimpleSVGCanvas` class ([patch](./patches/0003-canvaskit-add-SVGCanvas.patch))
 - Removal of unnecessary features to reduce blob size
 
 ## Setup
